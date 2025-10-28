@@ -1,0 +1,48 @@
+@use "./_variable.scss" as *;
+
+@use "sass:math";
+@use "sass:list";
+
+window.Bar {
+	background: transparent;
+	color: $fg-color;
+	font-weight: bold;
+	font-size: $font-size;
+
+	> centerbox {
+		background: $bg-color;
+		// border-radius: 10px;
+		// margin: 5px;
+		// min-height: 40px;
+	}
+
+	.tray-container {
+		margin-right: 10px;
+	}
+
+	button {
+		border-radius: 8px;
+		margin: 2px;
+		// min-width: 32px;
+		// min-height: 32px;
+	}
+
+	.bar_empty {
+		min-width: 30rem;
+		background: white;
+		
+	}
+
+	// Battery icon using font
+	.battery-icon {
+		font-family: "Font Awesome 6 Free";
+		font-size: 16px;
+		font-weight: 900;
+		min-width: 24px;
+	}
+
+//	box {
+//		min-height: 40px;
+//	}
+
+}
