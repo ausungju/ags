@@ -53,6 +53,7 @@
 
 				nativeBuildInputs = with pkgs; [
 					wrapGAppsHook3
+					wrapGAppsHook4
 					gobject-introspection
 					ags.packages.${system}.default
 				];
