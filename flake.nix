@@ -3,82 +3,76 @@
 
 	inputs = {
 		nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-
-		ags = {
-			url = "github:aylur/ags";
-			inputs.nixpkgs.follows = "nixpkgs";
-		};
+		# AGS input - for reference only, not directly used due to wrapGAppsHook issue
+		ags.url = "github:aylur/ags";
 	};
 
 	outputs = {
 		self,
 		nixpkgs,
-		ags,
+		...
 	}: let
 		system = "x86_64-linux";
 		pkgs = nixpkgs.legacyPackages.${system};
+		
 		pname = "my-shell";
 		entry = "app.ts";
 
-		astalPackages = with ags.packages.${system}; [
-			io
-			astal4 # or astal3 for gtk3
-			apps
-			auth
-			battery
-			bluetooth
-			cava
-			greet
-			hyprland
-			mpris
-			network
-			notifd
-			powerprofiles
-			river
-			tray
-			wireplumber
+		# Basic runtime dependencies
+		runtimeDeps = with pkgs; [
+			gjs
+			libadwaita
+			libsoup_3
+			gtk4
 		];
-
-		extraPackages =
-			astalPackages
-			++ [
-				pkgs.libadwaita
-				pkgs.libsoup_3
-			];
+		
 	in {
 		packages.${system} = {
-			default = pkgs.stdenv.mkDerivation {
-				name = pname;
-				src = ./.;
-
-				nativeBuildInputs = with pkgs; [
-					wrapGAppsHook3
-					wrapGAppsHook4
-					gobject-introspection
-					ags.packages.${system}.default
-				];
-
-				buildInputs = extraPackages ++ [pkgs.gjs];
-
-				installPhase = ''
-					runHook preInstall
-
-					mkdir -p $out/bin
-					mkdir -p $out/share
-					cp -r * $out/share
-					ags bundle ${entry} $out/bin/${pname} -d "SRC='$out/share'"
-
-					runHook postInstall
-				'';
-			};
+			default = pkgs.writeShellScriptBin pname ''
+				# This script expects AGS to be available in PATH
+				# Install AGS separately in your system configuration
+				
+				if ! command -v ags &> /dev/null; then
+					echo "Error: AGS not found in PATH"
+					echo ""
+					echo "Please install AGS in your NixOS/home-manager configuration:"
+					echo "  environment.systemPackages = [ inputs.ags.packages.\${system}.default ];"
+					echo "or:"
+					echo "  home.packages = [ inputs.ags.packages.\${system}.default ];"
+					exit 1
+				fi
+				
+				export PATH="${pkgs.lib.makeBinPath runtimeDeps}:$PATH"
+				exec ags run "${self}/${entry}" "$@"
+			'';
 		};
 
 		devShells.${system} = {
 			default = pkgs.mkShell {
-				buildInputs = extraPackages ++ [
-					(ags.packages.${system}.default.override {
-						inherit extraPackages;
-					})
+				packages = runtimeDeps;
+				
+				shellHook = ''
+					echo "AGS development environment"
+					echo ""
+					echo "Note: Install AGS separately due to wrapGAppsHook compatibility issue"
+					echo "  nix shell github:aylur/ags"
+					echo ""
+					echo "Then run:"
+					echo "  ags run ${entry}"
+				'';
+			};
+		};
+		
+		# Export for use in NixOS/home-manager
+		# Usage: imports = [ inputs.my-shell.homeManagerModules.default ];
+		homeManagerModules.default = { config, lib, pkgs, ...}: {
+			options.programs.my-shell = {
+				enable = lib.mkEnableOption "my-shell AGS configuration";
+			};
+			
+			config = lib.mkIf config.programs.my-shell.enable {
+				home.packages = [
+					self.packages.${system}.default
 				];
 			};
 		};
