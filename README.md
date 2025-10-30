@@ -2,19 +2,22 @@
 
 A custom AGS (Aylur's GTK Shell) configuration built with Nix flakes.
 
-## Installation
-
-### Method 1: Direct Run (for testing)
+## Quick Start
 
 ```bash
-# Install AGS first (temporary workaround for wrapGAppsHook issue)
-nix shell github:aylur/ags
-
-# Then run your shell
+# Run directly (first run will take 1-2 minutes to build AGS)
 nix run github:ausungju/ags
+
+# Or locally
+cd /path/to/ags
+nix run
 ```
 
-### Method 2: NixOS Configuration
+**Note:** The first run will build AGS and Astal libraries (~1-2 minutes). Subsequent runs will be instant thanks to Nix caching.
+
+## Installation
+
+### Method 1: NixOS Configuration
 
 Add to your `flake.nix`:
 
@@ -23,15 +26,13 @@ Add to your `flake.nix`:
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     my-shell.url = "github:ausungju/ags";
-    ags.url = "github:aylur/ags";
   };
 
-  outputs = { self, nixpkgs, my-shell, ags, ... }: {
+  outputs = { self, nixpkgs, my-shell, ... }: {
     nixosConfigurations.yourhost = nixpkgs.lib.nixosSystem {
       modules = [
         {
           environment.systemPackages = [
-            ags.packages.x86_64-linux.default
             my-shell.packages.x86_64-linux.default
           ];
         }
@@ -41,9 +42,9 @@ Add to your `flake.nix`:
 }
 ```
 
-### Method 3: Home Manager
+Then run with: `my-shell`
 
-Add to your home-manager configuration:
+### Method 2: Home Manager
 
 ```nix
 {
@@ -51,21 +52,29 @@ Add to your home-manager configuration:
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     home-manager.url = "github:nix-community/home-manager";
     my-shell.url = "github:ausungju/ags";
-    ags.url = "github:aylur/ags";
   };
 
-  outputs = { self, nixpkgs, home-manager, my-shell, ags, ... }: {
+  outputs = { self, nixpkgs, home-manager, my-shell, ... }: {
     homeConfigurations.youruser = home-manager.lib.homeManagerConfiguration {
       modules = [
         my-shell.homeManagerModules.default
         {
           programs.my-shell.enable = true;
-          home.packages = [ ags.packages.x86_64-linux.default ];
         }
       ];
     };
   };
 }
+```
+
+### Method 3: Standalone with Nix Profile
+
+```bash
+# Install
+nix profile install github:ausungju/ags
+
+# Run
+my-shell
 ```
 
 ## Development
@@ -74,18 +83,60 @@ Add to your home-manager configuration:
 # Enter development shell
 nix develop
 
-# Run AGS (requires AGS to be installed)
+# The AGS binary will be available in PATH
 ags run app.ts
 ```
 
-## Current Limitations
+## Technical Details
 
-Due to the deprecation of `wrapGAppsHook` in nixpkgs (replaced by `wrapGAppsHook3`), AGS and its Astal libraries need to be installed separately. This is a temporary workaround until AGS upstream updates their dependencies.
+### Workaround for wrapGAppsHook Deprecation
+
+Due to the deprecation of `wrapGAppsHook` in nixpkgs (replaced by `wrapGAppsHook3`), this flake uses a runtime build approach:
+
+- AGS and Astal packages are built at **runtime** to avoid evaluation errors
+- First execution takes 1-2 minutes as packages are built and cached
+- Subsequent executions are instant (packages are retrieved from Nix store)
+- This approach allows the flake to work as a subflake without requiring users to install AGS separately
+
+This is a temporary workaround until AGS upstream updates to use `wrapGAppsHook3`.
 
 ## Structure
 
-- `app.ts` - Main entry point
-- `widget/` - Widget definitions
-  - `bar/` - Bar widgets
-  - `system-menu-window.tsx` - System menu
-- `style/` - SCSS stylesheets
+```
+.
+├── app.ts                    # Main entry point
+├── flake.nix                 # Nix flake configuration
+├── widget/                   # Widget definitions
+│   ├── bar/                  # Status bar components
+│   │   ├── Bar.tsx           # Main bar
+│   │   ├── battery.tsx       # Battery widget
+│   │   ├── system.tsx        # System tray
+│   │   ├── time.tsx          # Clock
+│   │   ├── workspace.tsx     # Workspace indicator
+│   │   └── utils.tsx         # Utility functions
+│   └── system-menu-window.tsx # System menu
+└── style/                    # SCSS stylesheets
+    ├── _variable.scss        # Variables
+    ├── bar.scss              # Bar styles
+    └── main.scss             # Main styles
+```
+
+## Features
+
+- 🚀 Works as a standalone flake
+- 📦 Can be used as a subflake in other Nix configurations
+- 🏠 Home Manager module included
+- ⚡ Fast execution after initial build
+- 🔧 Full AGS/Astal functionality
+
+## Troubleshooting
+
+### First run is slow
+This is expected! AGS and Astal libraries need to be built once. After that, everything is cached.
+
+### "Dirty git tree" warning
+This warning is harmless - it just means you have uncommitted changes in your repository.
+
+### Missing typelibs
+Make sure you're using the latest version of the flake. The runtime script automatically sets up `GI_TYPELIB_PATH` and `LD_LIBRARY_PATH`.
+

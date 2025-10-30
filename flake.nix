@@ -3,14 +3,17 @@
 
 	inputs = {
 		nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
-		# AGS input - for reference only, not directly used due to wrapGAppsHook issue
-		ags.url = "github:aylur/ags";
+		
+		ags = {
+			url = "github:aylur/ags";
+			inputs.nixpkgs.follows = "nixpkgs";
+		};
 	};
 
 	outputs = {
 		self,
 		nixpkgs,
-		...
+		ags,
 	}: let
 		system = "x86_64-linux";
 		pkgs = nixpkgs.legacyPackages.${system};
@@ -18,33 +21,48 @@
 		pname = "my-shell";
 		entry = "app.ts";
 
-		# Basic runtime dependencies
+		# Try to extract AGS packages without triggering the error
+		# Use strings to defer evaluation
+		agsOutputs = ags.packages.${system} or {};
+		
 		runtimeDeps = with pkgs; [
 			gjs
 			libadwaita
 			libsoup_3
 			gtk4
+			typescript
+			nodejs
 		];
 		
 	in {
 		packages.${system} = {
-			default = pkgs.writeShellScriptBin pname ''
-				# This script expects AGS to be available in PATH
-				# Install AGS separately in your system configuration
+			default = pkgs.writeShellApplication {
+				name = pname;
+				runtimeInputs = runtimeDeps ++ [ pkgs.nix ];
 				
-				if ! command -v ags &> /dev/null; then
-					echo "Error: AGS not found in PATH"
-					echo ""
-					echo "Please install AGS in your NixOS/home-manager configuration:"
-					echo "  environment.systemPackages = [ inputs.ags.packages.\${system}.default ];"
-					echo "or:"
-					echo "  home.packages = [ inputs.ags.packages.\${system}.default ];"
-					exit 1
-				fi
-				
-				export PATH="${pkgs.lib.makeBinPath runtimeDeps}:$PATH"
-				exec ags run "${self}/${entry}" "$@"
-			'';
+				text = ''
+					# Build AGS and required astal packages at runtime
+					# This is a workaround for the wrapGAppsHook deprecation issue
+					
+					AGS_FLAKE="github:aylur/ags"
+					
+					echo "Ensuring AGS and Astal packages are built..." >&2
+					
+					# Build all needed packages in parallel
+					AGS_CLI=$(nix build "$AGS_FLAKE" --no-link --print-out-paths 2>/dev/null)
+					BATTERY=$(nix build "$AGS_FLAKE#battery" --no-link --print-out-paths 2>/dev/null)
+					TRAY=$(nix build "$AGS_FLAKE#tray" --no-link --print-out-paths 2>/dev/null)
+					HYPRLAND=$(nix build "$AGS_FLAKE#hyprland" --no-link --print-out-paths 2>/dev/null)
+					IO=$(nix build "$AGS_FLAKE#io" --no-link --print-out-paths 2>/dev/null)
+					ASTAL4=$(nix build "$AGS_FLAKE#astal4" --no-link --print-out-paths 2>/dev/null)
+					
+					# Set up typelib paths for GObject Introspection
+					export GI_TYPELIB_PATH="$BATTERY/lib/girepository-1.0:$TRAY/lib/girepository-1.0:$HYPRLAND/lib/girepository-1.0:$IO/lib/girepository-1.0:$ASTAL4/lib/girepository-1.0''${GI_TYPELIB_PATH:+:$GI_TYPELIB_PATH}"
+					export LD_LIBRARY_PATH="$BATTERY/lib:$TRAY/lib:$HYPRLAND/lib:$IO/lib:$ASTAL4/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+					
+					exec "$AGS_CLI/bin/ags" run "${self}/${entry}" "$@"
+				'';
+			};
 		};
 
 		devShells.${system} = {
@@ -54,17 +72,16 @@
 				shellHook = ''
 					echo "AGS development environment"
 					echo ""
-					echo "Note: Install AGS separately due to wrapGAppsHook compatibility issue"
-					echo "  nix shell github:aylur/ags"
+					echo "Building AGS..."
+					AGS_BIN=$(nix build --no-link --print-out-paths github:aylur/ags)/bin/ags
+					export PATH="$(dirname "$AGS_BIN"):$PATH"
+					echo "AGS available at: $AGS_BIN"
 					echo ""
-					echo "Then run:"
-					echo "  ags run ${entry}"
+					echo "Run: ags run ${entry}"
 				'';
 			};
 		};
 		
-		# Export for use in NixOS/home-manager
-		# Usage: imports = [ inputs.my-shell.homeManagerModules.default ];
 		homeManagerModules.default = { config, lib, pkgs, ...}: {
 			options.programs.my-shell = {
 				enable = lib.mkEnableOption "my-shell AGS configuration";
